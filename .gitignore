@@ -228,6 +228,10 @@ Thumbs.db:encryptable
 ehthumbs.db
 ehthumbs_vista.db
 
+# Base de datos sqlite del proyecto
+*.db
+utils/*.db
+
 # Dump file
 *.stackdump
 
