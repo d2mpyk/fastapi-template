@@ -28,6 +28,7 @@ from utils.config import settings
 # Instancia de las rutas
 router = APIRouter()
 
+
 # ----------------------------------------------------------------------
 # Muestra todos los usuarios
 @router.get(
@@ -46,6 +47,7 @@ def get_users(db: Annotated[Session, Depends(get_db)]):
         detail="No hay usuarios que mostrar",
     )
 
+
 # ----------------------------------------------------------------------
 # Crea un usuario
 @router.post(
@@ -55,9 +57,7 @@ def get_users(db: Annotated[Session, Depends(get_db)]):
 )
 def create_user(user: UserCreate, db: Annotated[Session, Depends(get_db)]):
     result = db.execute(
-        select(User).where(
-            func.lower(User.username) == user.username.lower()
-        )
+        select(User).where(func.lower(User.username) == user.username.lower())
     )
     exists_user = result.scalars().first()
 
@@ -90,10 +90,11 @@ def create_user(user: UserCreate, db: Annotated[Session, Depends(get_db)]):
 
     return new_user
 
+
 # ----------------------------------------------------------------------
 # Respuesta de Token
 @router.post(
-    "/token", 
+    "/token",
     response_model=TokenResponse,
     status_code=status.HTTP_200_OK,
 )
@@ -108,7 +109,7 @@ def login_for_access_token(
         ),
     )
     user = result.scalars().first()
-    
+
     # Verifica si el user exists y el passwoed es correcto
     if not user or not verify_password(form_data.password, user.password_hash):
         raise HTTPException(
@@ -125,12 +126,14 @@ def login_for_access_token(
             "id": str(user.id),
             "sub": str(user.username),
             "email": str(user.email),
+            "role": str(user.role),
         },
         expires_delta=access_token_expires,
     )
     # For Debug
     # print(access_token)
     return TokenResponse(access_token=access_token, token_type="bearer")
+
 
 # ----------------------------------------------------------------------
 # Muestra mi usuario
@@ -174,6 +177,23 @@ def get_current_user(
 
     return user
 
+
+# ----------------------------------------------------------------------
+# Verifica si el usuario es admin
+def get_current_admin(
+    current_user: User = Depends(get_current_user),
+    response_model=UserResponsePrivate,
+):
+    # Verificamos el campo role
+    if current_user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            # 403 = Prohibido (Sabemos quién eres, pero no tienes permiso)
+            detail="Acceso denegado",
+        )
+    return current_user
+
+
 # ----------------------------------------------------------------------
 # Muestra solo 1 user
 @router.get(
@@ -191,6 +211,7 @@ def get_user(user_id: int, db: Annotated[Session, Depends(get_db)]):
     raise HTTPException(
         status_code=status.HTTP_404_NOT_FOUND, detail="Este usuario no existe"
     )
+
 
 # ----------------------------------------------------------------------
 # Edita un usuario parcialmente
@@ -219,9 +240,7 @@ def update_user_partial(
         and user_data.username.lower() != user.username.lower()
     ):
         result = db.execute(
-            select(User).where(
-                func.lower(User.username) == user_data.username.lower()
-            ),
+            select(User).where(func.lower(User.username) == user_data.username.lower()),
         )
 
         user_exist = result.scalars().first()
@@ -233,9 +252,7 @@ def update_user_partial(
 
     if user_data.email is not None and user_data.email.lower() != user.email.lower():
         result = db.execute(
-            select(User).where(
-                func.lower(User.email) == user_data.email.lower()
-            ),
+            select(User).where(func.lower(User.email) == user_data.email.lower()),
         )
         email_exist = result.scalars().first()
         if email_exist:
@@ -254,10 +271,16 @@ def update_user_partial(
 
     return user
 
+
 # ----------------------------------------------------------------------
 # Elimina un usuario, y en cascada sus posts
 @router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT, tags=["Users"])
-def delete_user(user_id: int, db: Annotated[Session, Depends(get_db)]):
+def delete_user(
+    user_id: int,
+    db: Annotated[Session, Depends(get_db)],
+    current_admin: User = Depends(get_current_admin),
+):
+    # Si se llega acá es por que es user Admin
     result = db.execute(select(User).where(User.id == user_id))
     user = result.scalars().first()
     if not user:

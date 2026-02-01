@@ -21,7 +21,8 @@ class UserResponsePublic(BaseModel):
     image_path: str
 
 class UserResponsePrivate(UserResponsePublic):
-    email: EmailStr    
+    email: EmailStr
+    role: str
     create_at: datetime
 
 # Actualización de usuario
