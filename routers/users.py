@@ -1,0 +1,268 @@
+from datetime import timedelta
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordRequestForm
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session
+from models.users import User
+from utils.database import get_db
+from schemas.user import (
+    TokenResponse,
+    UserCreate,
+    UserResponsePrivate,
+    UserResponsePublic,
+    UserUpdate,
+)
+
+# Import's Locales
+from utils.auth import (
+    create_access_token,
+    hash_password,
+    oauth2_scheme,
+    verify_access_token,
+    verify_password,
+)
+from utils.config import settings
+
+# Instancia de las rutas
+router = APIRouter()
+
+# ----------------------------------------------------------------------
+# Muestra todos los usuarios
+@router.get(
+    "",
+    response_model=list[UserResponsePrivate],
+    status_code=status.HTTP_200_OK,
+)
+def get_users(db: Annotated[Session, Depends(get_db)]):
+    result = db.execute(select(User))
+    users = result.scalars().all()
+
+    if users:
+        return users
+    raise HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail="No hay usuarios que mostrar",
+    )
+
+# ----------------------------------------------------------------------
+# Crea un usuario
+@router.post(
+    "",
+    response_model=UserResponsePrivate,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_user(user: UserCreate, db: Annotated[Session, Depends(get_db)]):
+    result = db.execute(
+        select(User).where(
+            func.lower(User.username) == user.username.lower()
+        )
+    )
+    exists_user = result.scalars().first()
+
+    if exists_user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Este usuario ya está registrado",
+        )
+
+    result = db.execute(
+        select(User).where(func.lower(User.email) == user.email.lower())
+    )
+    exists_email = result.scalars().first()
+
+    if exists_email:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Este email ya está registrado",
+        )
+
+    new_user = User(
+        username=user.username,
+        email=user.email.lower(),
+        password_hash=hash_password(user.password),
+    )
+
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+
+    return new_user
+
+# ----------------------------------------------------------------------
+# Respuesta de Token
+@router.post(
+    "/token", 
+    response_model=TokenResponse,
+    status_code=status.HTTP_200_OK,
+)
+def login_for_access_token(
+    form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
+    db: Annotated[Session, Depends(get_db)],
+):
+    # Busca user por email
+    result = db.execute(
+        select(User).where(
+            func.lower(User.email) == form_data.username.lower(),
+        ),
+    )
+    user = result.scalars().first()
+    
+    # Verifica si el user exists y el passwoed es correcto
+    if not user or not verify_password(form_data.password, user.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Usuario o Password incorrecto",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    # Crea access token con email, username, id
+    access_token_expires = timedelta(
+        minutes=int(settings.ACCESS_TOKEN_EXPIRE_MINUTES.get_secret_value())
+    )
+    access_token = create_access_token(
+        data={
+            "id": str(user.id),
+            "username": str(user.username),
+            "sub": str(user.email),
+        },
+        expires_delta=access_token_expires,
+    )
+    # For Debug
+    print(access_token)
+    return TokenResponse(access_token=access_token, token_type="bearer")
+
+# ----------------------------------------------------------------------
+# Muestra mi usuario
+@router.get("/me", response_model=UserResponsePrivate)
+def get_current_user(
+    token: Annotated[str, Depends(oauth2_scheme)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    """Obtiene el usuario actual autenticado."""
+    user_id = verify_access_token(token)
+    if user_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token expirado o invalido.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    # Valida si user_id es un entero (Defensa contra JWT manipulados)
+    try:
+        user_id_int = int(user_id)
+    except (TypeError, ValueError):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token expirado o invalido.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    result = db.execute(
+        select(User).where(User.id == user_id_int),
+    )
+
+    user = result.scalars().first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Este usuario no está registrado.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    return user
+
+# ----------------------------------------------------------------------
+# Muestra solo 1 user
+@router.get(
+    "/{user_id}",
+    response_model=UserResponsePublic,
+    status_code=status.HTTP_200_OK,
+)
+def get_user(user_id: int, db: Annotated[Session, Depends(get_db)]):
+    result = db.execute(select(User).where(User.id == user_id))
+    exists_user = result.scalars().first()
+
+    if exists_user:
+        return exists_user
+
+    raise HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND, detail="Este usuario no existe"
+    )
+
+# ----------------------------------------------------------------------
+# Edita un usuario parcialmente
+@router.patch(
+    "/{user_id}",
+    response_model=UserResponsePrivate,
+    status_code=status.HTTP_200_OK,
+)
+def update_user_partial(
+    user_id: int,
+    user_data: UserUpdate,
+    db: Annotated[Session, Depends(get_db)],
+):
+    result = db.execute(select(User).where(User.id == user_id))
+    user = result.scalars().first()
+
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Este usuario no existe",
+        )
+
+    # Si quiere editar el nombre del usuario, primero verificamos el usuario
+    if (
+        user_data.username is not None
+        and user_data.username.lower() != user.username.lower()
+    ):
+        result = db.execute(
+            select(User).where(
+                func.lower(User.username) == user_data.username.lower()
+            ),
+        )
+
+        user_exist = result.scalars().first()
+        if user_exist:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Este Usuario ya está registrado.",
+            )
+
+    if user_data.email is not None and user_data.email.lower() != user.email.lower():
+        result = db.execute(
+            select(User).where(
+                func.lower(User.email) == user_data.email.lower()
+            ),
+        )
+        email_exist = result.scalars().first()
+        if email_exist:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Este Email ya está registrado.",
+            )
+
+    # Establecemos cada campo editado dinamicamente, dejamos los otros iguales
+    update_data = user_data.model_dump(exclude_unset=True)
+    for field, value in update_data.items():
+        setattr(user, field, value)
+
+    db.commit()
+    db.refresh(user)
+
+    return user
+
+# ----------------------------------------------------------------------
+# Elimina un usuario, y en cascada sus posts
+@router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT, tags=["Users"])
+def delete_user(user_id: int, db: Annotated[Session, Depends(get_db)]):
+    result = db.execute(select(User).where(User.id == user_id))
+    user = result.scalars().first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Este usuario no está registrado.",
+        )
+
+    db.delete(user)
+    db.commit()
