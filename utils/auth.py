@@ -1,4 +1,4 @@
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, timedelta, timezone
 from fastapi import status, HTTPException
 import jwt
 
@@ -59,9 +59,9 @@ def verify_access_token(token:str) -> str | None:
             token,
             settings.SECRET_KEY.get_secret_value(),
             algorithms=[settings.ALGORITHM.get_secret_value()],
-            options={"require": ["exp", "iat", "sub"]},
+            options={"require": ["sub", "exp", "iat"]},
         )
-    except jwt.InvalidTokenError:
+    except jwt.InvalidTokenError | jwt.ExpiredSignatureError | jwt.InvalidAlgorithmError:
         return credentials_exception
     else: 
         return payload.get("sub")

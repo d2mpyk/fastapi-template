@@ -123,13 +123,13 @@ def login_for_access_token(
     access_token = create_access_token(
         data={
             "id": str(user.id),
-            "username": str(user.username),
-            "sub": str(user.email),
+            "sub": str(user.username),
+            "email": str(user.email),
         },
         expires_delta=access_token_expires,
     )
     # For Debug
-    print(access_token)
+    # print(access_token)
     return TokenResponse(access_token=access_token, token_type="bearer")
 
 # ----------------------------------------------------------------------
@@ -140,8 +140,10 @@ def get_current_user(
     db: Annotated[Session, Depends(get_db)],
 ):
     """Obtiene el usuario actual autenticado."""
-    user_id = verify_access_token(token)
-    if user_id is None:
+    username = verify_access_token(token)
+    result = db.execute(select(User).where(User.username == username))
+    user = result.scalars().first()
+    if user is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Token expirado o invalido.",
@@ -150,7 +152,7 @@ def get_current_user(
 
     # Valida si user_id es un entero (Defensa contra JWT manipulados)
     try:
-        user_id_int = int(user_id)
+        user_id_int = int(user.id)
     except (TypeError, ValueError):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
