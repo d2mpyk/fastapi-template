@@ -9,9 +9,12 @@ from fastapi.templating import Jinja2Templates
 # Imports Locales
 from utils.database import Base, engine
 from routers import users
+from utils.init_db import init_approved_users
 
 # Instancia la ceación de la base y sus tablas sino existen
 Base.metadata.create_all(bind=engine)
+# Inicializo la DB
+init_approved_users()
 # Instancia la aplicación de FastAPI
 app = FastAPI(
     title="FastAPI Template",

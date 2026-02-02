@@ -34,3 +34,9 @@ class User(Base):
         if self.image_file:
             return f"/media/profile_pics/{self.image_file}"
         return "/static/profile_pics/default.jpg"
+    
+class ApprovedUsers(Base):
+    __tablename__ = "approved"
+
+    email: Mapped[str] = mapped_column(String(120), unique=True, nullable=False)
+    

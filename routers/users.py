@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
-from models.users import User
+from models.users import User, ApprovedUsers
 from utils.database import get_db
 from schemas.user import (
     TokenResponse,
@@ -51,9 +51,9 @@ def get_users(db: Annotated[Session, Depends(get_db)]):
 # ----------------------------------------------------------------------
 # Crea un usuario
 @router.post(
-    "",
+    "/create",
     response_model=UserResponsePrivate,
-    status_code=status.HTTP_201_CREATED,
+    status_code=status.HTTP_201_CREATED
 )
 def create_user(user: UserCreate, db: Annotated[Session, Depends(get_db)]):
     result = db.execute(
@@ -72,16 +72,40 @@ def create_user(user: UserCreate, db: Annotated[Session, Depends(get_db)]):
     )
     exists_email = result.scalars().first()
 
+    # Aceptar solo si el email no está registrado
     if exists_email:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Este email ya está registrado",
         )
 
+    result = db.execute(
+            select(ApprovedUsers).
+            where(func.lower(ApprovedUsers.email) == user.email.lower())
+        )
+    is_approved = result.scalars().first()
+
+    # Aceptar solo usuarios que coincidan con la DB approved
+    if is_approved is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Este usuario no está aprobado.",
+        )
+
+    # Si no hay ningún usuario, el primero será admin !
+    result_users = db.execute(select(User))
+    users = result_users.scalars().all()
+
+    if users is None:
+        new_role = "admin"
+    else: 
+        new_role = "user"
+
     new_user = User(
         username=user.username,
         email=user.email.lower(),
         password_hash=hash_password(user.password),
+        role=new_role,
     )
 
     db.add(new_user)
