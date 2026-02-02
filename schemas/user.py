@@ -20,7 +20,13 @@ class UserResponsePublic(BaseModel):
     image_file: str | None
     image_path: str
 
-class UserResponsePrivate(UserResponsePublic):
+class UserResponsePrivate(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    username: str
+    image_file: str | None
+    image_path: str
     email: EmailStr
     role: str
     create_at: datetime
@@ -37,4 +43,5 @@ class TokenResponse(BaseModel):
     token_type: str
 
 class ApprovedUsers(BaseModel):
-    email: EmailStr | None = Field(max_length=120)
+    id: int
+    email: EmailStr = Field(max_length=120)

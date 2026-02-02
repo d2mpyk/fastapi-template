@@ -16,7 +16,7 @@ class User(Base):
     username: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
     email: Mapped[str] = mapped_column(String(120), unique=True, nullable=False)
     password_hash: Mapped[str] = mapped_column(String(200), nullable=False)
-    role: Mapped[str] = mapped_column(String(20), default="user", nullable=False)
+    role: Mapped[str] = mapped_column(String(20), nullable=False)
     # Solo guarda el nombre de la imagen, en caso de que el path cambie por folder order
     image_file: Mapped[str | None] = mapped_column(
         String(200),

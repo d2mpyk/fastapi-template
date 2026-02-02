@@ -51,9 +51,9 @@ def get_users(db: Annotated[Session, Depends(get_db)]):
 # ----------------------------------------------------------------------
 # Crea un usuario
 @router.post(
-    "/create",
-    response_model=UserResponsePrivate,
-    status_code=status.HTTP_201_CREATED
+    "/create", 
+    response_model=UserResponsePrivate, 
+    status_code=status.HTTP_201_CREATED,
 )
 def create_user(user: UserCreate, db: Annotated[Session, Depends(get_db)]):
     result = db.execute(
@@ -80,9 +80,10 @@ def create_user(user: UserCreate, db: Annotated[Session, Depends(get_db)]):
         )
 
     result = db.execute(
-            select(ApprovedUsers).
-            where(func.lower(ApprovedUsers.email) == user.email.lower())
+        select(ApprovedUsers).where(
+            func.lower(ApprovedUsers.email) == user.email.lower()
         )
+    )
     is_approved = result.scalars().first()
 
     # Aceptar solo usuarios que coincidan con la DB approved
@@ -93,12 +94,11 @@ def create_user(user: UserCreate, db: Annotated[Session, Depends(get_db)]):
         )
 
     # Si no hay ningún usuario, el primero será admin !
-    result_users = db.execute(select(User))
-    users = result_users.scalars().all()
+    users = db.query(User).first()
 
     if users is None:
         new_role = "admin"
-    else: 
+    else:
         new_role = "user"
 
     new_user = User(
@@ -206,7 +206,6 @@ def get_current_user(
 # Verifica si el usuario es admin
 def get_current_admin(
     current_user: User = Depends(get_current_user),
-    response_model=UserResponsePrivate,
 ):
     # Verificamos el campo role
     if current_user.role != "admin":
@@ -222,7 +221,7 @@ def get_current_admin(
 # Muestra solo 1 user
 @router.get(
     "/{user_id}",
-    response_model=UserResponsePublic,
+    response_model=UserResponsePrivate,
     status_code=status.HTTP_200_OK,
 )
 def get_user(user_id: int, db: Annotated[Session, Depends(get_db)]):
