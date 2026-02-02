@@ -37,4 +37,4 @@ class TokenResponse(BaseModel):
     token_type: str
 
 class ApprovedUsers(BaseModel):
-    email: str
+    email: EmailStr | None = Field(max_length=120)
