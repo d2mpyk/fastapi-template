@@ -9,7 +9,7 @@ from models.users import User, ApprovedUsers
 from utils.database import get_db
 from utils.auth import (
     generate_verification_token, 
-    send_email_async, 
+    send_email, 
     confirm_verification_token,
 )
 from schemas.user import (
@@ -128,7 +128,7 @@ def create_user(
     # 2. Crear link (ajustar dominio en .env)
     verify_url = f"https://{settings.DOMINIO.get_secret_value()}/api/v1/users/verify/{token}"
     # 3. Enviar email en segundo plano sin bloquear el return
-    background_tasks.add_task(send_email_async, new_user.email, verify_url)
+    background_tasks.add_task(send_email, new_user.email, verify_url)
 
 
     return new_user
