@@ -38,5 +38,6 @@ class User(Base):
 class ApprovedUsers(Base):
     __tablename__ = "approved"
 
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     email: Mapped[str] = mapped_column(String(120), unique=True, nullable=False)
     
