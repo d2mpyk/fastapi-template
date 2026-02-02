@@ -1,12 +1,17 @@
 from datetime import timedelta
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 from models.users import User, ApprovedUsers
 from utils.database import get_db
+from utils.auth import (
+    generate_verification_token, 
+    send_email_async, 
+    confirm_verification_token,
+)
 from schemas.user import (
     TokenResponse,
     UserCreate,
@@ -55,7 +60,11 @@ def get_users(db: Annotated[Session, Depends(get_db)]):
     response_model=UserResponsePrivate, 
     status_code=status.HTTP_201_CREATED,
 )
-def create_user(user: UserCreate, db: Annotated[Session, Depends(get_db)]):
+def create_user(
+    user: UserCreate, 
+    db: Annotated[Session, Depends(get_db)],
+    background_tasks: BackgroundTasks,
+):
     result = db.execute(
         select(User).where(func.lower(User.username) == user.username.lower())
     )
@@ -106,11 +115,21 @@ def create_user(user: UserCreate, db: Annotated[Session, Depends(get_db)]):
         email=user.email.lower(),
         password_hash=hash_password(user.password),
         role=new_role,
+        is_active=False,
     )
 
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
+
+    # --- Logica de confirmación de Email ---
+    # 1. Generar token
+    token = generate_verification_token(new_user.email)
+    # 2. Crear link (ajustar dominio en .env)
+    verify_url = f"https://{settings.DOMINIO.get_secret_value()}/api/v1/users/verify/{token}"
+    # 3. Enviar email en segundo plano sin bloquear el return
+    background_tasks.add_task(send_email_async, new_user.email, verify_url)
+
 
     return new_user
 
@@ -157,6 +176,37 @@ def login_for_access_token(
     # For Debug
     # print(access_token)
     return TokenResponse(access_token=access_token, token_type="bearer")
+
+
+# ----------------------------------------------------------------------
+# Verifica token de confirmación de email
+@router.get("/verify/{token}", status_code=status.HTTP_200_OK)
+def verify_user_email(token: str, db: Annotated[Session, Depends(get_db)]):
+    email = confirm_verification_token(token)
+    
+    if not email:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="El link de verificación es inválido o ha expirado."
+        )
+
+    # Buscar usuario
+    result = db.execute(select(User).where(func.lower(User.email) == email.lower()))
+    user = result.scalars().first()
+
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Usuario no encontrado",
+        )
+
+    if not user.is_active:
+        # Activar usuario
+        user.is_active = True
+        db.commit()
+        db.refresh(user)
+
+    return {"message": "Cuenta verificada exitosamente."}
 
 
 # ----------------------------------------------------------------------
@@ -247,6 +297,7 @@ def update_user_partial(
     user_id: int,
     user_data: UserUpdate,
     db: Annotated[Session, Depends(get_db)],
+    current_user: User = Depends(get_current_user),
 ):
     result = db.execute(select(User).where(User.id == user_id))
     user = result.scalars().first()
