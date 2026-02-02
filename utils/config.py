@@ -7,6 +7,8 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
     )
 
+    ADMIN: SecretStr
+    NAME: SecretStr
     SECRET_KEY: SecretStr
     ALGORITHM: SecretStr
     ACCESS_TOKEN_EXPIRE_MINUTES: SecretStr
