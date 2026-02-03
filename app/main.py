@@ -1,6 +1,5 @@
 """Esta es una plantilla de FastAPI con model User, Auth y DB """
 from fastapi import FastAPI, Request, status
-
 # Para enviar respuestas HTML
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
@@ -10,6 +9,7 @@ from fastapi.templating import Jinja2Templates
 from utils.database import Base, engine
 from routers import users
 from utils.init_db import init_approved_users
+
 
 # Instancia la ceación de la base y sus tablas sino existen
 Base.metadata.create_all(bind=engine)

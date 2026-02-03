@@ -8,8 +8,8 @@ from sqlalchemy.orm import Session
 from models.users import User, ApprovedUsers
 from utils.database import get_db
 from utils.auth import (
-    generate_verification_token, 
-    send_email, 
+    generate_verification_token,
+    send_email,
     confirm_verification_token,
 )
 from schemas.user import (
@@ -56,12 +56,12 @@ def get_users(db: Annotated[Session, Depends(get_db)]):
 # ----------------------------------------------------------------------
 # Crea un usuario
 @router.post(
-    "/create", 
-    response_model=UserResponsePrivate, 
+    "/create",
+    response_model=UserResponsePrivate,
     status_code=status.HTTP_201_CREATED,
 )
 def create_user(
-    user: UserCreate, 
+    user: UserCreate,
     db: Annotated[Session, Depends(get_db)],
     background_tasks: BackgroundTasks,
 ):
@@ -126,10 +126,12 @@ def create_user(
     # 1. Generar token
     token = generate_verification_token(new_user.email)
     # 2. Crear link (ajustar dominio en .env)
-    verify_url = f"https://{settings.DOMINIO.get_secret_value()}/api/v1/users/verify/{token}"
+    verify_url = (
+        f"http://{settings.DOMINIO.get_secret_value()}/api/v1/users/verify/{token}"
+    )
+    context = {"user": user.username, "email": user.email, "url": verify_url}
     # 3. Enviar email en segundo plano sin bloquear el return
-    background_tasks.add_task(send_email, new_user.email, verify_url)
-
+    background_tasks.add_task(send_email, context)
 
     return new_user
 
@@ -160,6 +162,15 @@ def login_for_access_token(
             detail="Usuario o Password incorrecto",
             headers={"WWW-Authenticate": "Bearer"},
         )
+
+    # Verifiac si el usuario está activo
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Error: Usuario inactivo, por favor confirme su correo.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
     # Crea access token con email, username, id
     access_token_expires = timedelta(
         minutes=int(settings.ACCESS_TOKEN_EXPIRE_MINUTES.get_secret_value())
@@ -183,11 +194,11 @@ def login_for_access_token(
 @router.get("/verify/{token}", status_code=status.HTTP_200_OK)
 def verify_user_email(token: str, db: Annotated[Session, Depends(get_db)]):
     email = confirm_verification_token(token)
-    
+
     if not email:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="El link de verificación es inválido o ha expirado."
+            detail="El link de verificación es inválido o ha expirado.",
         )
 
     # Buscar usuario
