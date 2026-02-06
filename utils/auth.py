@@ -136,6 +136,7 @@ def get_current_user(
 # Alias de Modelo
 CurrentUser = Annotated[User, Depends(get_current_user)]
 
+
 # ----------------------------------------------------------------------
 # Crea el token de confirmación de correo
 def generate_verification_token(email: str):

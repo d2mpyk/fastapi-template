@@ -1,4 +1,3 @@
-from sqlalchemy.orm import Session
 from models.users import ApprovedUsers, User
 from .database import SessionLocal
 from utils.auth import hash_password
