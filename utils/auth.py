@@ -1,5 +1,9 @@
 from datetime import UTC, datetime, timedelta
-from fastapi import status, HTTPException
+from fastapi import Depends, status, HTTPException
+from fastapi.templating import Jinja2Templates
+from typing import Annotated
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 import jwt, smtplib
 
 from pwdlib import PasswordHash
@@ -7,11 +11,12 @@ from argon2.exceptions import VerifyMismatchError
 from fastapi.security import OAuth2PasswordBearer
 from itsdangerous import URLSafeTimedSerializer
 
+from .config import settings
+from .database import get_db
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from fastapi.templating import Jinja2Templates
+from models.users import User
 
-from .config import settings
 
 # Password Hasher
 ph = PasswordHash.recommended()
@@ -51,22 +56,22 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None) -> s
         expire = datetime.now(UTC) + timedelta(
             minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES.get_secret_value(),
         )
-    
+
     # Authlib requiere claims estándar: 'exp' (expiration) y 'iat' (issued at)
     payload.update({"exp": expire, "iat": datetime.now(UTC)})
-     
+
     # Codificación y firma
     token = jwt.encode(
-        payload, 
+        payload,
         settings.SECRET_KEY.get_secret_value(),
-        algorithm=settings.ALGORITHM.get_secret_value()
+        algorithm=settings.ALGORITHM.get_secret_value(),
     )
     return token
 
 
 # ----------------------------------------------------------------------
 # Verifica el Token de Acceso
-def verify_access_token(token:str) -> str | None:
+def verify_access_token(token: str) -> str | None:
     """Verifica un JWT y retorna el 'sub' si es valido."""
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -80,28 +85,81 @@ def verify_access_token(token:str) -> str | None:
             algorithms=[settings.ALGORITHM.get_secret_value()],
             options={"require": ["sub", "exp", "iat"]},
         )
-    except jwt.InvalidTokenError | jwt.ExpiredSignatureError | jwt.InvalidAlgorithmError:
+    except (
+        jwt.InvalidTokenError | jwt.ExpiredSignatureError | jwt.InvalidAlgorithmError
+    ):
         return credentials_exception
-    else: 
+    else:
         return payload.get("sub")
 
 
 # ----------------------------------------------------------------------
+# Obtiene el usuario actual
+def get_current_user(
+    token: Annotated[str, Depends(oauth2_scheme)],
+    db: Annotated[Session, Depends(get_db)],    
+) -> User:
+    """Obtiene el usuario actual autenticado."""
+    username = verify_access_token(token)
+    result = db.execute(select(User).where(User.username == username))
+    user = result.scalars().first()
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token Invalido o Expirado.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    # Valida si user_id es un entero (Defensa contra JWT manipulados)
+    try:
+        user_id_int = int(user.id)
+    except (TypeError, ValueError):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token Invalido o Expirado.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    result = db.execute(select(User).where(User.id == user_id_int))
+    user = result.scalars().first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Usuario no encontrado.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    return user
+
+
+# ----------------------------------------------------------------------
+# Alias de Modelo
+CurrentUser = Annotated[User, Depends(get_current_user)]
+
+# ----------------------------------------------------------------------
 # Crea el token de confirmación de correo
 def generate_verification_token(email: str):
-    serializer = URLSafeTimedSerializer(settings.SECRET_KEY_CHECK_MAIL.get_secret_value())
-    return serializer.dumps(email, salt=settings.SECURITY_PASSWD_SALT.get_secret_value())
+    """Genera un token para la verificación del correo"""
+    serializer = URLSafeTimedSerializer(
+        settings.SECRET_KEY_CHECK_MAIL.get_secret_value()
+    )
+    return serializer.dumps(
+        email, salt=settings.SECURITY_PASSWD_SALT.get_secret_value()
+    )
 
 
 # ----------------------------------------------------------------------
 # Verifica el token de confirmación de correo
 def confirm_verification_token(token: str, expiration=3600):
-    serializer = URLSafeTimedSerializer(settings.SECRET_KEY_CHECK_MAIL.get_secret_value())
+    """Verifica un token de confirmación de correo"""
+    serializer = URLSafeTimedSerializer(
+        settings.SECRET_KEY_CHECK_MAIL.get_secret_value()
+    )
     try:
         email = serializer.loads(
             token,
             salt=settings.SECURITY_PASSWD_SALT.get_secret_value(),
-            max_age=expiration # Token expira en 1 hora
+            max_age=expiration,  # Token expira en 1 hora
         )
     except Exception:
         return False
@@ -110,18 +168,19 @@ def confirm_verification_token(token: str, expiration=3600):
 
 # ----------------------------------------------------------------------
 # Envia el email de confirmación
-def send_email(context: dict):
-    email_destinatario = context.get('email')
+def send_email_confirmation(context: dict):
+    """Envia un correo de confirmación de email"""
+    email_destinatario = context.get("email")
     DOMINIO = settings.DOMINIO.get_secret_value()
     EMAIL_SERVER = settings.EMAIL_SERVER.get_secret_value()
     EMAIL_PORT = int(settings.EMAIL_PORT.get_secret_value())
     EMAIL_USER = settings.EMAIL_USER.get_secret_value()
     EMAIL_PASSWD = settings.EMAIL_PASSWD.get_secret_value()
-    
+
     # 1. Obtener y Renderizar la Plantilla
     # Buscamos el archivo y le pasamos el diccionario de contexto completo
     template = templates.get_template("confirmation_tpl.html")
-    html_content = template.render(context) 
+    html_content = template.render(context)
 
     # 2. Crear el objeto Mensaje (MIMEMultipart es mejor para evitar errores de formato)
     message = MIMEMultipart("alternative")

@@ -19,4 +19,7 @@ class Base(DeclarativeBase):
 
 def get_db():
     with SessionLocal() as db:
-        yield db
+        try:
+            yield db
+        finally:
+            db.close()

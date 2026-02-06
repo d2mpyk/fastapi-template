@@ -4,16 +4,18 @@ from fastapi import FastAPI, Request, status
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-
+import sys
 # Imports Locales
 from utils.database import Base, engine
 from routers import users
-from utils.init_db import init_approved_users
+from utils.init_db import get_init_config, init_approved_users
 
 
+# Verificación de configuraciones iniciales
+get_init_config()
 # Instancia la ceación de la base y sus tablas sino existen
 Base.metadata.create_all(bind=engine)
-# Inicializo la DB
+# Verificación inicial de base de datos
 init_approved_users()
 # Instancia la aplicación de FastAPI
 app = FastAPI(

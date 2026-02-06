@@ -9,7 +9,7 @@ from models.users import User, ApprovedUsers
 from utils.database import get_db
 from utils.auth import (
     generate_verification_token,
-    send_email,
+    send_email_confirmation,
     confirm_verification_token,
 )
 from schemas.user import (
@@ -22,10 +22,9 @@ from schemas.user import (
 
 # Import's Locales
 from utils.auth import (
+    CurrentUser,
     create_access_token,
     hash_password,
-    oauth2_scheme,
-    verify_access_token,
     verify_password,
 )
 from utils.config import settings
@@ -35,13 +34,38 @@ router = APIRouter()
 
 
 # ----------------------------------------------------------------------
+# Muestra mi usuario
+@router.get("/me", response_model=UserResponsePrivate)
+def get_current_user(current_user: CurrentUser):
+    """Obtiene el usuario actual autenticado."""
+    return current_user
+
+
+# ----------------------------------------------------------------------
+# Verifica si el usuario es admin
+def get_current_admin(
+    current_user: User = Depends(get_current_user),
+):
+    # Verificamos el campo role
+    if current_user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            # 403 = Prohibido (Sabemos quién eres, pero no tienes permiso)
+            detail="Acceso denegado",
+        )
+    return current_user
+
+# ----------------------------------------------------------------------
 # Muestra todos los usuarios
 @router.get(
     "",
     response_model=list[UserResponsePrivate],
     status_code=status.HTTP_200_OK,
 )
-def get_users(db: Annotated[Session, Depends(get_db)]):
+def get_users(
+    db: Annotated[Session, Depends(get_db)],
+    user_admin: Annotated[User, Depends(get_current_admin)],
+):
     result = db.execute(select(User))
     users = result.scalars().all()
 
@@ -63,6 +87,7 @@ def get_users(db: Annotated[Session, Depends(get_db)]):
 def create_user(
     user: UserCreate,
     db: Annotated[Session, Depends(get_db)],
+    user_admin: Annotated[User, Depends(get_current_admin)],
     background_tasks: BackgroundTasks,
 ):
     result = db.execute(
@@ -102,19 +127,10 @@ def create_user(
             detail="Este usuario no está aprobado.",
         )
 
-    # Si no hay ningún usuario, el primero será admin !
-    users = db.query(User).first()
-
-    if users is None:
-        new_role = "admin"
-    else:
-        new_role = "user"
-
     new_user = User(
         username=user.username,
         email=user.email.lower(),
         password_hash=hash_password(user.password),
-        role=new_role,
         is_active=False,
     )
 
@@ -126,12 +142,13 @@ def create_user(
     # 1. Generar token
     token = generate_verification_token(new_user.email)
     # 2. Crear link (ajustar dominio en .env)
+    DOMINIO = settings.DOMINIO.get_secret_value()
     verify_url = (
-        f"http://{settings.DOMINIO.get_secret_value()}/api/v1/users/verify/{token}"
+        f"http://{DOMINIO}/api/v1/users/verify/{token}"
     )
     context = {"user": user.username, "email": user.email, "url": verify_url}
     # 3. Enviar email en segundo plano sin bloquear el return
-    background_tasks.add_task(send_email, context)
+    background_tasks.add_task(send_email_confirmation, context)
 
     return new_user
 
@@ -221,71 +238,17 @@ def verify_user_email(token: str, db: Annotated[Session, Depends(get_db)]):
 
 
 # ----------------------------------------------------------------------
-# Muestra mi usuario
-@router.get("/me", response_model=UserResponsePrivate)
-def get_current_user(
-    token: Annotated[str, Depends(oauth2_scheme)],
-    db: Annotated[Session, Depends(get_db)],
-):
-    """Obtiene el usuario actual autenticado."""
-    username = verify_access_token(token)
-    result = db.execute(select(User).where(User.username == username))
-    user = result.scalars().first()
-    if user is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token expirado o invalido.",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
-    # Valida si user_id es un entero (Defensa contra JWT manipulados)
-    try:
-        user_id_int = int(user.id)
-    except (TypeError, ValueError):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token expirado o invalido.",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
-    result = db.execute(
-        select(User).where(User.id == user_id_int),
-    )
-
-    user = result.scalars().first()
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Este usuario no está registrado.",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
-    return user
-
-
-# ----------------------------------------------------------------------
-# Verifica si el usuario es admin
-def get_current_admin(
-    current_user: User = Depends(get_current_user),
-):
-    # Verificamos el campo role
-    if current_user.role != "admin":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            # 403 = Prohibido (Sabemos quién eres, pero no tienes permiso)
-            detail="Acceso denegado",
-        )
-    return current_user
-
-
-# ----------------------------------------------------------------------
 # Muestra solo 1 user
 @router.get(
     "/{user_id}",
     response_model=UserResponsePrivate,
     status_code=status.HTTP_200_OK,
 )
-def get_user(user_id: int, db: Annotated[Session, Depends(get_db)]):
+def get_user(
+        user_id: int, 
+        user_admin: Annotated[User, Depends(get_current_admin)],
+        db: Annotated[Session, Depends(get_db)],
+    ):
     result = db.execute(select(User).where(User.id == user_id))
     exists_user = result.scalars().first()
 
@@ -308,7 +271,7 @@ def update_user_partial(
     user_id: int,
     user_data: UserUpdate,
     db: Annotated[Session, Depends(get_db)],
-    current_user: User = Depends(get_current_user),
+    current_user: CurrentUser,
 ):
     result = db.execute(select(User).where(User.id == user_id))
     user = result.scalars().first()
