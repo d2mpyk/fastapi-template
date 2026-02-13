@@ -13,6 +13,7 @@ from utils.auth import (
     confirm_verification_token,
 )
 from schemas.user import (
+    ApprovedUsersResponse,
     TokenResponse,
     UserCreate,
     UserResponsePrivate,
@@ -75,6 +76,72 @@ def get_users(
         status_code=status.HTTP_404_NOT_FOUND,
         detail="No hay usuarios que mostrar",
     )
+
+
+# ----------------------------------------------------------------------
+# Muestra todos los usuarios aprobados
+@router.get(
+    "/approved",
+    response_model=list[ApprovedUsersResponse],
+    status_code=status.HTTP_200_OK,
+)
+def get_approved_users(
+    db: Annotated[Session, Depends(get_db)],
+    user_admin: Annotated[User, Depends(get_current_admin)],
+):
+    result = db.execute(select(ApprovedUsers))
+    users = result.scalars().all()
+
+    if users:
+        return users
+    raise HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail="No hay usuarios que mostrar",
+    )
+
+
+# ----------------------------------------------------------------------
+# Crea un usuario Aprobado
+@router.post(
+    "/approved/{approved_email}",
+    response_model=ApprovedUsersResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_approved_user(
+    approved_email: str,
+    db: Annotated[Session, Depends(get_db)],
+    user_admin: Annotated[User, Depends(get_current_admin)],
+):
+    result = db.execute(
+        select(ApprovedUsers).where(func.lower(ApprovedUsers.email) == approved_email.lower())
+    )
+    exists_user = result.scalars().first()
+
+    if exists_user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Este usuario ya ha sido aprobado.",
+        )
+
+    result = db.execute(
+        select(User).where(func.lower(User.email) == approved_email.lower())
+    )
+    exists_email = result.scalars().first()
+
+    # Aceptar solo si el email no está registrado
+    if exists_email:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Este email ya está registrado.",
+        )
+
+    new_approved = ApprovedUsers(email=approved_email.lower())
+
+    db.add(new_approved)
+    db.commit()
+    db.refresh(new_approved)
+
+    return new_approved
 
 
 # ----------------------------------------------------------------------
@@ -163,7 +230,7 @@ def create_user(
 def login_for_access_token(
     form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
     db: Annotated[Session, Depends(get_db)],
-):
+):  
     # Busca user por email
     result = db.execute(
         select(User).where(

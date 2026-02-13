@@ -78,7 +78,8 @@ def init_approved_users():
                 email=ADMIN,
                 password_hash=hash_password("admin"),
                 role="admin",
-                is_active=True
+                is_active=True,
+                image_file="dxtrthink.png",
             )
             db.add(user_admin)
             db.commit()

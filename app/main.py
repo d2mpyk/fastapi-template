@@ -37,7 +37,7 @@ app.include_router(users.router, prefix="/api/v1/users", tags=["Users"])
 # Muestra la pagina principal del sitio
 @app.get(
     "/",
-    name="inicio",
+    name="index",
     response_class=HTMLResponse,
     status_code=status.HTTP_200_OK,
     include_in_schema=False,
@@ -46,6 +46,6 @@ def inicio(request: Request):
     """Renderiza la página inicial"""
     return templates.TemplateResponse(
         request=request,
-        name="index.html",
-        context={"Mensaje": "Solo el primer mensaje"},
+        name="portal/index.html",
+        context={"title": "Inicio"},
     )

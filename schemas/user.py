@@ -42,3 +42,6 @@ class TokenResponse(BaseModel):
 class ApprovedUsers(BaseModel):
     id: int
     email: EmailStr = Field(max_length=120)
+    
+class ApprovedUsersResponse(BaseModel):
+    email: EmailStr 
