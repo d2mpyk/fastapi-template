@@ -32,7 +32,7 @@ def get_init_config():
         or not NAME.strip()):
         print('='*60)
         print("❌ FATAL ERROR: Configuración de aplicación inválida.", file=sys.stderr)
-        print("   La variable de entorno 'ADMIN' o 'NAME' no está definida.", file=sys.stderr)
+        print("   La variable de entorno 'ADMIN' o 'NAME' no está definidas.", file=sys.stderr)
         print('='*60)
         # Detiene la ejecución del script retornando un código de error (1)
         sys.exit(1)
@@ -52,7 +52,7 @@ def get_init_config():
         or not EMAIL_PASSWD.strip()):
         print('='*60)
         print("❌ FATAL ERROR: Configuración de aplicación inválida.", file=sys.stderr)
-        print("   Las variables de entorno de correo no están definida.", file=sys.stderr)
+        print("   Las variables de entorno de correo no están definidas.", file=sys.stderr)
         print('='*60)
         # Detiene la ejecución del script retornando un código de error (1)
         sys.exit(1)

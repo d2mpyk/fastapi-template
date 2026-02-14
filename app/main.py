@@ -7,7 +7,7 @@ from fastapi.templating import Jinja2Templates
 import sys
 # Imports Locales
 from utils.database import Base, engine
-from routers import users
+from routers import clients, metrics, users
 from utils.init_db import get_init_config, init_approved_users
 
 
@@ -32,6 +32,9 @@ app.mount("/media", StaticFiles(directory="media"), name="media")
 templates = Jinja2Templates(directory="templates")
 # Enrutadores
 app.include_router(users.router, prefix="/api/v1/users", tags=["Users"])
+app.include_router(clients.router, prefix="/api/v1/clients", tags=["Clients"])
+app.include_router(metrics.router, prefix="/api/v1/metrics", tags=["Metrics"])
+
 
 
 # Muestra la pagina principal del sitio

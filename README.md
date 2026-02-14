@@ -1,5 +1,11 @@
 # FastAPI Template
 ### Este es un template inicial de app con user model y auth funcional
+### Se le ha añadido:
+- OAuth2 para Users Authentication 
+    - Resource Owner Password Credentials (ROPC)
+- OAuth2 para Clients Authentication 
+    - Client Credentials Flow
+    - Clientes tipo Dispositivos
 
 * Endpoints:
     * /api/v1/users - Muestra todos los usuarios

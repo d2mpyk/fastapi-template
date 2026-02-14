@@ -1,5 +1,5 @@
 from datetime import UTC, datetime, timedelta
-from fastapi import Depends, status, HTTPException
+from fastapi import Depends, HTTPException, status
 from fastapi.templating import Jinja2Templates
 from typing import Annotated
 from sqlalchemy import select
@@ -16,13 +16,15 @@ from .database import get_db
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from models.users import User
+from models.clients import OAuthClient
 
 
 # Password Hasher
 ph = PasswordHash.recommended()
 
 # Esquema de FastAPI para extraer el token del header "Authorization: Bearer ..."
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/v1/users/token")
+oauth2_user_scheme = OAuth2PasswordBearer(tokenUrl="api/v1/users/token")
+oauth2_client_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/clients/token")
 
 # Configuración de templates
 templates = Jinja2Templates(directory="templates")
@@ -96,8 +98,8 @@ def verify_access_token(token: str) -> str | None:
 # ----------------------------------------------------------------------
 # Obtiene el usuario actual
 def get_current_user(
-    token: Annotated[str, Depends(oauth2_scheme)],
-    db: Annotated[Session, Depends(get_db)],    
+    token: Annotated[str, Depends(oauth2_user_scheme)],
+    db: Annotated[Session, Depends(get_db)],
 ) -> User:
     """Obtiene el usuario actual autenticado."""
     username = verify_access_token(token)
@@ -128,13 +130,58 @@ def get_current_user(
             detail="Usuario no encontrado.",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    
+
     return user
 
 
 # ----------------------------------------------------------------------
 # Alias de Modelo
 CurrentUser = Annotated[User, Depends(get_current_user)]
+
+
+# ----------------------------------------------------------------------
+# Obtiene el cliente actual
+def get_current_client(
+    token: str = Depends(oauth2_client_scheme),
+    db: Session = Depends(get_db),
+):
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Credenciales de autenticación inválidas.",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+    try:
+        payload = jwt.decode(
+            token,
+            settings.SECRET_KEY.get_secret_value(),
+            algorithms=[settings.ALGORITHM],
+        )
+
+        token_type = payload.get("type")
+        client_id = payload.get("sub")
+
+        if token_type != "client" or client_id is None:
+            raise credentials_exception
+
+    except (
+        jwt.InvalidTokenError | jwt.ExpiredSignatureError | jwt.InvalidAlgorithmError
+    ):
+        raise credentials_exception
+
+    # Buscar cliente en DB
+    result = db.execute(select(OAuthClient).where(OAuthClient.client_id == client_id))
+    client = result.scalars().first()
+
+    if client is None or not client.is_active:
+        raise credentials_exception
+
+    return client
+
+
+# ----------------------------------------------------------------------
+# Alias de Modelo
+CurrentClient = Annotated[OAuthClient, Depends(get_current_user)]
 
 
 # ----------------------------------------------------------------------

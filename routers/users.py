@@ -239,7 +239,7 @@ def login_for_access_token(
     )
     user = result.scalars().first()
 
-    # Verifica si el user exists y el passwoed es correcto
+    # Verifica si el user exists y el password es correcto
     if not user or not verify_password(form_data.password, user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -259,18 +259,25 @@ def login_for_access_token(
     access_token_expires = timedelta(
         minutes=int(settings.ACCESS_TOKEN_EXPIRE_MINUTES.get_secret_value())
     )
+
+    # Crear JWT
     access_token = create_access_token(
         data={
             "id": str(user.id),
             "sub": str(user.username),
             "email": str(user.email),
+            "type": "user",
             "role": str(user.role),
         },
         expires_delta=access_token_expires,
     )
     # For Debug
     # print(access_token)
-    return TokenResponse(access_token=access_token, token_type="bearer")
+    return TokenResponse(        
+        access_token=access_token,
+        token_type="bearer",
+        expires_in=access_token_expires,
+    )
 
 
 # ----------------------------------------------------------------------
