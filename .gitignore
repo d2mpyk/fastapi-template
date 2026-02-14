@@ -255,4 +255,4 @@ $RECYCLE.BIN/
 # End of https://www.toptal.com/developers/gitignore/api/windows,macos,linux,python
 
 # Personals Config 
-.init_configs
+.init_configs.md

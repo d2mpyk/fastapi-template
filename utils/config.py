@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     EMAIL_USER: SecretStr
     EMAIL_PASSWD: SecretStr
     AES_SECRET_KEY: SecretStr
+    NONCE_TTL_MINUTES: SecretStr
 
 # Carga de variables de entorno
 settings = Settings()

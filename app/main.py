@@ -9,6 +9,7 @@ import sys
 from utils.database import Base, engine
 from routers import clients, metrics, users
 from utils.init_db import get_init_config, init_approved_users
+from utils.scheduler import start_scheduler
 
 
 # Verificación de configuraciones iniciales
@@ -23,6 +24,10 @@ app = FastAPI(
     description="Este es una plantilla de app en FastAPI",
     version="1.0.0",
 )
+# Limpieza programada de Nounces
+@app.on_event("startup")
+def startup_event():
+    start_scheduler()
 
 # Montar archivos estáticos (CSS/JS/Imagenes)
 app.mount("/static", StaticFiles(directory="static"), name="static")

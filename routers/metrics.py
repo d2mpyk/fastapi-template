@@ -1,13 +1,15 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 from typing import Annotated
+from datetime import datetime
 
 from utils.database import get_db
 from utils.auth import get_current_client
 from utils.crypto import decrypt_payload
 from models.clients import OAuthClient
 from models.metrics import ServerMetrics
-from datetime import datetime
+from models.security import UsedNonce
 
 from dateutil.parser import isoparse
 
@@ -32,6 +34,31 @@ def receive_metrics(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Permiso Denegado",
+        )
+
+    # Validación anti-Replay
+    nonce_value = encrypted_payload.get("nonce")
+
+    if not nonce_value:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Nonce missing",
+        )
+
+    new_nonce = UsedNonce(
+        client_id=current_client.id,
+        nonce=nonce_value,
+    )
+
+    try:
+        db.add(new_nonce)
+        db.commit()
+        db.refresh(new_nonce)
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Replay attack detected",
         )
 
     # 🔓 Descifrar

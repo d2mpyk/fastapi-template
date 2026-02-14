@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, JSON
+from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, JSON, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from utils.database import Base
@@ -31,8 +31,7 @@ class ServerMetrics(Base):
         index=True,
     )
 
-    # Considerar un index compuesto (client_id, server_timestamp)
-    
+
     # CPU
     cpu_percent: Mapped[float] = mapped_column(Float, nullable=False)
 
@@ -50,4 +49,12 @@ class ServerMetrics(Base):
         DateTime(timezone=True),
         default=lambda: datetime.now(UTC),
         nullable=False,
+    )
+
+    # Considerar un index compuesto (client_id, server_timestamp)
+    __table_args__ = (UniqueConstraint(
+        "client_id", 
+        "server_timestamp", 
+        name="uq_client_srvtime",
+        ),
     )

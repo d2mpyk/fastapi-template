@@ -266,7 +266,6 @@ def login_for_access_token(
             "id": str(user.id),
             "sub": str(user.username),
             "email": str(user.email),
-            "type": "user",
             "role": str(user.role),
         },
         expires_delta=access_token_expires,
